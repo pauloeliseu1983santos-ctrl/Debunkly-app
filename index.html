@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Debunkly — Verificador de Lojas</title>
+<meta name="theme-color" content="#14171C" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./icons/icon-192.png" />
+<link rel="apple-touch-icon" href="./icons/icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14171C;
+    --bg-panel:#1B1F26;
+    --bg-panel-2:#20242C;
+    --border:#2A2F38;
+    --text:#E8E6E1;
+    --text-dim:#8B92A0;
+    --danger:#E8542E;
+    --danger-bg:rgba(232,84,46,0.12);
+    --safe:#4FB286;
+    --safe-bg:rgba(79,178,134,0.12);
+    --caution:#D9A441;
+    --caution-bg:rgba(217,164,65,0.12);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    min-height:100vh;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .wrap{
+    max-width:480px;
+    margin:0 auto;
+    padding:28px 20px 40px;
+    min-height:100vh;
+  }
+  header{margin-bottom:22px;}
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.12em;
+    color:var(--text-dim);
+    text-transform:uppercase;
+  }
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:28px;
+    margin:6px 0 8px;
+    letter-spacing:-0.01em;
+  }
+  h1 span{color:var(--danger);}
+  .sub{
+    color:var(--text-dim);
+    font-size:14px;
+    line-height:1.5;
+    margin:0;
+  }
+  .scan-box{
+    margin-top:24px;
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px;
+  }
+  .field-label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    display:block;
+    margin-bottom:8px;
+  }
+  textarea{
+    width:100%;
+    background:var(--bg-panel-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    color:var(--text);
+    font-family:'JetBrains Mono',monospace;
+    font-size:14px;
+    padding:12px;
+    resize:none;
+    min-height:56px;
+    line-height:1.4;
+  }
+  textarea:focus{outline:2px solid var(--caution);outline-offset:1px;}
+  button.scan-btn{
+    width:100%;
+    margin-top:12px;
+    background:var(--danger);
+    color:#14171C;
+    border:none;
+    border-radius:10px;
+    padding:14px;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:0.01em;
+    cursor:pointer;
+  }
+  button.scan-btn:active{opacity:0.85;}
+  button.scan-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+  button.scan-btn:disabled{background:var(--border);color:var(--text-dim);}
+
+  .log{
+    margin-top:18px;
+    background:#0F1216;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:14px 14px 6px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+    display:none;
+  }
+  .log.show{display:block;}
+  .log-line{
+    display:flex;
+    gap:10px;
+    padding:6px 0;
+    color:var(--text-dim);
+    opacity:0;
+    transform:translateY(3px);
+    animation:reveal 0.25s ease forwards;
+    border-bottom:1px dashed rgba(255,255,255,0.05);
+  }
+  .log-line:last-child{border-bottom:none;}
+  @keyframes reveal{to{opacity:1;transform:translateY(0);}}
+  .tag{width:44px;flex:none;font-weight:500;}
+  .tag.ok{color:var(--safe);}
+  .tag.warn{color:var(--danger);}
+  .tag.na{color:var(--text-dim);}
+
+  .verdict{
+    margin-top:18px;
+    border-radius:14px;
+    padding:20px;
+    display:none;
+  }
+  .verdict.show{display:block;}
+  .verdict.safe{background:var(--safe-bg);border:1px solid var(--safe);}
+  .verdict.caution{background:var(--caution-bg);border:1px solid var(--caution);}
+  .verdict.danger{background:var(--danger-bg);border:1px solid var(--danger);}
+  .verdict-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:20px;
+    margin:0 0 4px;
+  }
+  .verdict.safe .verdict-title{color:var(--safe);}
+  .verdict.caution .verdict-title{color:var(--caution);}
+  .verdict.danger .verdict-title{color:var(--danger);}
+  .verdict-desc{font-size:13.5px;color:var(--text);line-height:1.5;margin:0;}
+
+  .stores-panel{
+    margin-top:16px;
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px;
+    display:none;
+  }
+  .stores-panel.show{display:block;}
+  .stores-product{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+    color:var(--text);
+    background:var(--bg-panel-2);
+    border-radius:8px;
+    padding:8px 10px;
+    margin:6px 0 12px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .stores-list{display:flex;flex-direction:column;gap:8px;}
+  .store-item{
+    display:flex;align-items:center;justify-content:space-between;
+    background:var(--bg-panel-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px 14px;
+  }
+  .store-item span{font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:14px;}
+  .store-item a{
+    font-family:'Inter',sans-serif;font-weight:600;font-size:12.5px;
+    color:#14171C;background:var(--safe);
+    padding:7px 12px;border-radius:8px;text-decoration:none;flex:none;
+  }
+  .stores-note{
+    font-size:11.5px;color:var(--text-dim);margin:12px 0 0;line-height:1.4;
+  }
+
+  .history{margin-top:30px;}
+  .history-head{
+    display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;
+  }
+  .history-head span{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);
+  }
+  .clear-btn{
+    background:none;border:none;color:var(--text-dim);font-size:12px;
+    text-decoration:underline;cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .hist-item{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 0;
+    border-bottom:1px solid var(--border);
+    cursor:pointer;
+  }
+  .hist-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+  .hist-dot.safe{background:var(--safe);}
+  .hist-dot.caution{background:var(--caution);}
+  .hist-dot.danger{background:var(--danger);}
+  .hist-url{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;color:var(--text-dim);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;
+  }
+  .empty-hist{color:var(--text-dim);font-size:13px;}
+  footer{margin-top:34px;color:var(--text-dim);font-size:11.5px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">MVP · leitura de risco em segundos</span>
+    <h1>Debunk<span>ly</span></h1>
+    <p class="sub">Cole o link de uma loja (ou compartilhe direto do navegador) e veja os sinais de alerta antes de comprar.</p>
+  </header>
+
+  <div class="scan-box">
+    <label class="field-label" for="urlInput">Link da loja</label>
+    <textarea id="urlInput" placeholder="https://exemplo-loja.com/produto" autocomplete="off" autocapitalize="off"></textarea>
+    <button class="scan-btn" id="scanBtn">Verificar link</button>
+  </div>
+
+  <div class="log" id="log"></div>
+  <div class="verdict" id="verdict">
+    <p class="verdict-title" id="verdictTitle"></p>
+    <p class="verdict-desc" id="verdictDesc"></p>
+  </div>
+
+  <div class="stores-panel" id="storesPanel">
+    <span class="field-label">Comprar em lojas confiáveis</span>
+    <p class="stores-product" id="storesProduct"></p>
+    <div class="stores-list" id="storesList"></div>
+    <p class="stores-note">Links de busca pelo mesmo produto — ainda não é comparação de preço confirmada.</p>
+  </div>
+
+  <div class="history">
+    <div class="history-head">
+      <span>Últimas verificações</span>
+      <button class="clear-btn" id="clearHist">limpar</button>
+    </div>
+    <div id="histList"><p class="empty-hist">Nenhuma verificação ainda.</p></div>
+  </div>
+
+  <footer>
+    Análise local, baseada em padrões da própria URL (e do conteúdo da página quando o navegador permite acesso). Não é uma garantia — use como um segundo olhar antes da compra.
+  </footer>
+</div>
+
+<script>
+// Cole aqui a URL do seu Worker (ex: "https://debunkly-proxy.seu-usuario.workers.dev").
+// Deixe em branco ("") para o app tentar fetch direto do navegador (sujeito a bloqueio de CORS).
+const PROXY_URL = "https://pauloeliseu1983santosctrl--3182e0aa7f2611f19c0a1607ee4eb77e.web.val.run";
+
+function extractProductTitle(pageText){
+  if(!pageText) return null;
+  const ogMatch = pageText.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+    || pageText.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
+  if(ogMatch && ogMatch[1]) return ogMatch[1].trim();
+  const titleMatch = pageText.match(/<title[^>]*>([^<]+)<\/title>/i);
+  if(titleMatch && titleMatch[1]) return titleMatch[1].trim();
+  return null;
+}
+
+// TODO: trocar cada "search" por link de afiliado real assim que aprovado nos programas
+// (Amazon Associates, Mercado Livre Afiliados, Lomadee/Awin para Magalu e Shopee).
+const TRUSTED_STORES = [
+  { name: 'Mercado Livre', search: q => `https://lista.mercadolivre.com.br/${encodeURIComponent(q)}` },
+  { name: 'Amazon', search: q => `https://www.amazon.com.br/s?k=${encodeURIComponent(q)}` },
+  { name: 'Magazine Luiza', search: q => `https://www.magazineluiza.com.br/busca/${encodeURIComponent(q)}/` },
+  { name: 'Shopee', search: q => `https://shopee.com.br/search?keyword=${encodeURIComponent(q)}` },
+];
+
+const SHORTENERS = ['bit.ly','tinyurl.com','cutt.ly','is.gd','t.co','shorte.st','rebrand.ly','bl.ink','s.id'];
+const FREE_HOSTS = ['weebly.com','wixsite.com','business.site','godaddysites.com','blogspot.com','firebaseapp.com','netlify.app','github.io','glitch.me'];
+const RISKY_TLDS = ['tk','ml','ga','cf','gq','top','xyz','click','work','loan','win','review','party','gdn','buzz'];
+const COMMERCE_HINTS = ['carrinho','checkout','comprar','promo','oferta','loja','shop','off'];
+const URGENCY_WORDS = ['últimas unidades','apenas hoje','oferta expira','compre agora','restam poucas','só até hoje','últimas horas'];
+
+function extractUrl(raw){
+  if(!raw) return null;
+  const match = raw.match(/https?:\/\/[^\s]+/i);
+  const candidate = match ? match[0] : raw.trim();
+  try{ return new URL(candidate); }catch(e){
+    try{ return new URL('https://' + candidate); }catch(e2){ return null; }
+  }
+}
+
+function runHeuristics(u, pageText){
+  const checks = [];
+  let score = 0;
+  const host = u.hostname.toLowerCase();
+  const full = u.href;
+
+  // HTTPS
+  if(u.protocol !== 'https:'){
+    checks.push({label:'Conexão sem criptografia (HTTP)', status:'warn'}); score += 2;
+  } else {
+    checks.push({label:'Conexão segura (HTTPS)', status:'ok'});
+  }
+
+  // Punycode / homograph
+  if(host.includes('xn--')){
+    checks.push({label:'Domínio usa caracteres disfarçados (punycode)', status:'warn'}); score += 4;
+  } else {
+    checks.push({label:'Sem indício de domínio disfarçado', status:'ok'});
+  }
+
+  // TLD arriscado
+  const tld = host.split('.').pop();
+  if(RISKY_TLDS.includes(tld)){
+    checks.push({label:'Domínio termina em .' + tld + ' (comum em golpes)', status:'warn'}); score += 1;
+  } else {
+    checks.push({label:'Terminação de domínio (' + tld + ') sem histórico incomum', status:'ok'});
+  }
+
+  // Hífens/números excessivos
+  const hyphens = (host.match(/-/g) || []).length;
+  const digits = (host.match(/[0-9]/g) || []).length;
+  if(hyphens >= 3 || digits >= 4){
+    checks.push({label:'Nome de domínio com padrão incomum (hífens/números em excesso)', status:'warn'}); score += 1;
+  } else {
+    checks.push({label:'Estrutura do nome de domínio parece normal', status:'ok'});
+  }
+
+  // Encurtador
+  if(SHORTENERS.some(s => host === s || host.endsWith('.'+s))){
+    checks.push({label:'Link encurtado — destino final não pode ser visto', status:'warn'}); score += 2;
+  } else {
+    checks.push({label:'Não é um link encurtado', status:'ok'});
+  }
+
+  // Hospedagem gratuita usada como loja
+  const looksLikeStore = COMMERCE_HINTS.some(k => full.toLowerCase().includes(k));
+  if(FREE_HOSTS.some(f => host.endsWith(f)) && looksLikeStore){
+    checks.push({label:'Loja hospedada em plataforma gratuita genérica', status:'warn'}); score += 2;
+  } else {
+    checks.push({label:'Hospedagem não aparenta ser genérica/gratuita', status:'ok'});
+  }
+
+  // URL muito longa / muitos parâmetros
+  const paramCount = Array.from(u.searchParams.keys()).length;
+  if(full.length > 90 || paramCount >= 6){
+    checks.push({label:'URL longa ou com excesso de parâmetros', status:'warn'}); score += 1;
+  } else {
+    checks.push({label:'Tamanho e parâmetros da URL dentro do normal', status:'ok'});
+  }
+
+  // Conteúdo da página (se acessível)
+  if(pageText === null){
+    checks.push({label:'Conteúdo da página não verificável (bloqueio do navegador)', status:'na'});
+    checks.push({label:'Linguagem de urgência não verificável (bloqueio do navegador)', status:'na'});
+  } else {
+    const lower = pageText.toLowerCase();
+    const hasContact = /cnpj|política de privacidade|termos de uso|fale conosco/.test(lower);
+    if(!hasContact){
+      checks.push({label:'Sem CNPJ, contato ou políticas visíveis na página', status:'warn'}); score += 1;
+    } else {
+      checks.push({label:'Página exibe CNPJ/contato/políticas', status:'ok'});
+    }
+    const urgencyHits = URGENCY_WORDS.filter(w => lower.includes(w)).length;
+    if(urgencyHits >= 2){
+      checks.push({label:'Linguagem de urgência excessiva no texto da página', status:'warn'}); score += 2;
+    } else {
+      checks.push({label:'Sem excesso de linguagem de urgência', status:'ok'});
+    }
+  }
+
+  return {checks, score};
+}
+
+function verdictFromScore(score){
+  if(score <= 1) return {level:'safe', title:'SEM SINAIS RELEVANTES', desc:'Não identificamos padrões comuns de golpe nesse link. Ainda assim, confira preço, forma de pagamento e reputação da loja antes de comprar.'};
+  if(score <= 4) return {level:'caution', title:'SUSPEITO — VERIFIQUE ANTES', desc:'Alguns sinais de alerta apareceram. Pesquise o nome da loja + "reclamação", confira dados de CNPJ e evite pagar via PIX/depósito direto sem garantias.'};
+  return {level:'danger', title:'ALTO RISCO', desc:'Vários sinais associados a golpes foram encontrados nesse link. Recomendamos não prosseguir com a compra sem confirmar a loja por outros canais.'};
+}
+
+function saveHistory(entry){
+  const list = JSON.parse(localStorage.getItem('debunkly_history') || '[]');
+  list.unshift(entry);
+  localStorage.setItem('debunkly_history', JSON.stringify(list.slice(0,10)));
+  renderHistory();
+}
+
+function renderHistory(){
+  const list = JSON.parse(localStorage.getItem('debunkly_history') || '[]');
+  const el = document.getElementById('histList');
+  if(list.length === 0){ el.innerHTML = '<p class="empty-hist">Nenhuma verificação ainda.</p>'; return; }
+  el.innerHTML = list.map(item => `
+    <div class="hist-item" data-url="${encodeURIComponent(item.url)}">
+      <span class="hist-dot ${item.level}"></span>
+      <span class="hist-url">${item.url}</span>
+    </div>
+  `).join('');
+  el.querySelectorAll('.hist-item').forEach(node => {
+    node.addEventListener('click', () => {
+      document.getElementById('urlInput').value = decodeURIComponent(node.dataset.url);
+      window.scrollTo({top:0, behavior:'smooth'});
+    });
+  });
+}
+
+async function scan(){
+  const raw = document.getElementById('urlInput').value;
+  const u = extractUrl(raw);
+  const logEl = document.getElementById('log');
+  const verdictEl = document.getElementById('verdict');
+  const btn = document.getElementById('scanBtn');
+  verdictEl.classList.remove('show');
+  logEl.innerHTML = '';
+  logEl.classList.remove('show');
+  document.getElementById('storesPanel').classList.remove('show');
+
+  if(!u){
+    logEl.classList.add('show');
+    logEl.innerHTML = '<div class="log-line"><span class="tag warn">[!!]</span><span>Cole um link válido para analisar.</span></div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Analisando...';
+
+  let pageText = null;
+  try{
+    if(PROXY_URL){
+      const res = await fetch(PROXY_URL + '?url=' + encodeURIComponent(u.href));
+      if(res.ok){
+        const data = await res.json();
+        if(data.ok) pageText = data.text;
+      }
+    } else {
+      const res = await fetch(u.href, {mode:'cors'});
+      if(res.ok) pageText = await res.text();
+    }
+  }catch(e){ pageText = null; }
+
+  const {checks, score} = runHeuristics(u, pageText);
+  logEl.classList.add('show');
+
+  checks.forEach((c, i) => {
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.style.animationDelay = (i * 90) + 'ms';
+    const tagClass = c.status === 'ok' ? 'ok' : c.status === 'warn' ? 'warn' : 'na';
+    const tagText = c.status === 'ok' ? '[OK]' : c.status === 'warn' ? '[!!]' : '[--]';
+    line.innerHTML = `<span class="tag ${tagClass}">${tagText}</span><span>${c.label}</span>`;
+    logEl.appendChild(line);
+  });
+
+  const v = verdictFromScore(score);
+  const productTitle = extractProductTitle(pageText);
+  setTimeout(() => {
+    verdictEl.className = 'verdict show ' + v.level;
+    document.getElementById('verdictTitle').textContent = v.title;
+    document.getElementById('verdictDesc').textContent = v.desc;
+    saveHistory({url:u.href, level:v.level, score});
+    renderStoresPanel(v.level, productTitle);
+    btn.disabled = false;
+    btn.textContent = 'Verificar link';
+  }, checks.length * 90 + 200);
+}
+
+function renderStoresPanel(level, productTitle){
+  const panel = document.getElementById('storesPanel');
+  if(level === 'safe' || !productTitle){
+    panel.classList.remove('show');
+    return;
+  }
+  document.getElementById('storesProduct').textContent = productTitle;
+  const listEl = document.getElementById('storesList');
+  listEl.innerHTML = TRUSTED_STORES.map(store => `
+    <div class="store-item">
+      <span>${store.name}</span>
+      <a href="${store.search(productTitle)}" target="_blank" rel="noopener">Ver ofertas</a>
+    </div>
+  `).join('');
+  panel.classList.add('show');
+}
+
+document.getElementById('scanBtn').addEventListener('click', scan);
+document.getElementById('clearHist').addEventListener('click', () => {
+  localStorage.removeItem('debunkly_history');
+  renderHistory();
+});
+
+// Preenche automaticamente se o app foi aberto via compartilhamento (Android share sheet)
+(function autoFillFromShare(){
+  const params = new URLSearchParams(window.location.search);
+  const shared = params.get('url') || params.get('text') || params.get('title');
+  if(shared){
+    document.getElementById('urlInput').value = shared;
+    scan();
+  }
+})();
+
+renderHistory();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
