@@ -79,6 +79,23 @@
     display:block;
     margin-bottom:8px;
   }
+  .field-row{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:8px;
+  }
+  .field-row .field-label{margin-bottom:0;}
+  .paste-btn{
+    background:rgba(217,164,65,0.14);
+    border:1px solid var(--caution);
+    color:var(--caution);
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:11.5px;
+    padding:5px 11px;
+    border-radius:7px;
+    cursor:pointer;
+  }
+  .paste-btn:active{opacity:0.8;}
   textarea{
     width:100%;
     background:var(--bg-panel-2);
@@ -159,6 +176,20 @@
   .verdict.caution .verdict-title{color:var(--caution);}
   .verdict.danger .verdict-title{color:var(--danger);}
   .verdict-desc{font-size:13.5px;color:var(--text);line-height:1.5;margin:0;}
+  .share-btn{
+    margin-top:14px;
+    width:100%;
+    background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.18);
+    color:var(--text);
+    border-radius:9px;
+    padding:11px;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+    font-size:13.5px;
+    cursor:pointer;
+  }
+  .share-btn:active{opacity:0.8;}
 
   .stores-panel{
     margin-top:16px;
@@ -237,7 +268,10 @@
   </header>
 
   <div class="scan-box">
-    <label class="field-label" for="urlInput">Link da loja</label>
+    <div class="field-row">
+      <label class="field-label" for="urlInput">Link da loja</label>
+      <button class="paste-btn" id="pasteBtn" type="button">Colar</button>
+    </div>
     <textarea id="urlInput" placeholder="https://exemplo-loja.com/produto" autocomplete="off" autocapitalize="off"></textarea>
     <button class="scan-btn" id="scanBtn">Verificar link</button>
   </div>
@@ -246,6 +280,7 @@
   <div class="verdict" id="verdict">
     <p class="verdict-title" id="verdictTitle"></p>
     <p class="verdict-desc" id="verdictDesc"></p>
+    <button class="share-btn" id="shareBtn">Compartilhar resultado</button>
   </div>
 
   <div class="stores-panel" id="storesPanel">
@@ -298,6 +333,19 @@ const RISKY_TLDS = ['tk','ml','ga','cf','gq','top','xyz','click','work','loan','
 const COMMERCE_HINTS = ['carrinho','checkout','comprar','promo','oferta','loja','shop','off'];
 const URGENCY_WORDS = ['últimas unidades','apenas hoje','oferta expira','compre agora','restam poucas','só até hoje','últimas horas'];
 
+// Marketplaces grandes e conhecidos: pulamos as checagens de conteúdo (urgência/contato),
+// que geram falso positivo nesses sites por causa de URLs longas e copy de marketing.
+const TRUSTED_MARKETPLACES = [
+  'mercadolivre.com.br','mercadolivre.com','amazon.com.br','amazon.com',
+  'magazineluiza.com.br','americanas.com.br','submarino.com.br','shoptime.com.br',
+  'casasbahia.com.br','pontofrio.com.br','shopee.com.br','aliexpress.com',
+  'netshoes.com.br','centauro.com.br',
+];
+
+function isTrustedMarketplace(hostname){
+  return TRUSTED_MARKETPLACES.some(d => hostname === d || hostname.endsWith('.'+d));
+}
+
 function extractUrl(raw){
   if(!raw) return null;
   const match = raw.match(/https?:\/\/[^\s]+/i);
@@ -312,6 +360,11 @@ function runHeuristics(u, pageText){
   let score = 0;
   const host = u.hostname.toLowerCase();
   const full = u.href;
+  const trusted = isTrustedMarketplace(host);
+
+  if(trusted){
+    checks.push({label:'Domínio de marketplace grande e conhecido', status:'ok'});
+  }
 
   // HTTPS
   if(u.protocol !== 'https:'){
@@ -361,14 +414,16 @@ function runHeuristics(u, pageText){
 
   // URL muito longa / muitos parâmetros
   const paramCount = Array.from(u.searchParams.keys()).length;
-  if(full.length > 90 || paramCount >= 6){
+  if(!trusted && (full.length > 90 || paramCount >= 6)){
     checks.push({label:'URL longa ou com excesso de parâmetros', status:'warn'}); score += 1;
   } else {
     checks.push({label:'Tamanho e parâmetros da URL dentro do normal', status:'ok'});
   }
 
   // Conteúdo da página (se acessível)
-  if(pageText === null){
+  if(trusted){
+    checks.push({label:'Checagens de conteúdo dispensadas (marketplace confiável)', status:'ok'});
+  } else if(pageText === null){
     checks.push({label:'Conteúdo da página não verificável (bloqueio do navegador)', status:'na'});
     checks.push({label:'Linguagem de urgência não verificável (bloqueio do navegador)', status:'na'});
   } else {
@@ -476,9 +531,33 @@ async function scan(){
     document.getElementById('verdictDesc').textContent = v.desc;
     saveHistory({url:u.href, level:v.level, score});
     renderStoresPanel(v.level, productTitle);
+    setupShareButton(v, u.hostname);
     btn.disabled = false;
     btn.textContent = 'Verificar link';
   }, checks.length * 90 + 200);
+}
+
+function setupShareButton(verdict, hostname){
+  const shareBtn = document.getElementById('shareBtn');
+  const appUrl = window.location.origin + window.location.pathname;
+  const messages = {
+    safe: `Verifiquei "${hostname}" no Debunkly e não achou sinais de golpe ✅. Confira antes de comprar: ${appUrl}`,
+    caution: `O Debunkly encontrou sinais suspeitos em "${hostname}" ⚠️. Verifique qualquer loja antes de comprar: ${appUrl}`,
+    danger: `Alerta: o Debunkly identificou alto risco em "${hostname}" 🚨. Confira antes de comprar: ${appUrl}`,
+  };
+  const shareText = messages[verdict.level] || messages.safe;
+
+  shareBtn.onclick = async () => {
+    if(navigator.share){
+      try{ await navigator.share({ text: shareText }); }catch(e){ /* usuário cancelou */ }
+    } else {
+      try{
+        await navigator.clipboard.writeText(shareText);
+        shareBtn.textContent = 'Copiado!';
+        setTimeout(() => { shareBtn.textContent = 'Compartilhar resultado'; }, 2000);
+      }catch(e){ /* silencioso */ }
+    }
+  };
 }
 
 function renderStoresPanel(level, productTitle){
@@ -499,6 +578,17 @@ function renderStoresPanel(level, productTitle){
 }
 
 document.getElementById('scanBtn').addEventListener('click', scan);
+
+document.getElementById('pasteBtn').addEventListener('click', async () => {
+  try{
+    const text = await navigator.clipboard.readText();
+    if(text){
+      document.getElementById('urlInput').value = text.trim();
+    }
+  }catch(e){
+    // Permissão negada ou clipboard vazio/inacessível — usuário cola manualmente.
+  }
+});
 document.getElementById('clearHist').addEventListener('click', () => {
   localStorage.removeItem('debunkly_history');
   renderHistory();
