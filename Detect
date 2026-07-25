@@ -308,6 +308,11 @@
 // Deixe em branco ("") para o app tentar fetch direto do navegador (sujeito a bloqueio de CORS).
 const PROXY_URL = "https://pauloeliseu1983santosctrl--3182e0aa7f2611f19c0a1607ee4eb77e.web.val.run";
 
+// Cole aqui sua chave da API do Google Safe Browsing (Google Cloud Console > APIs e serviços
+// > Biblioteca > Safe Browsing API > Ativar > Credenciais). Deixe em branco ("") para pular
+// essa checagem e usar só a heurística local.
+const SAFE_BROWSING_API_KEY = "AIzaSyDeuDcfkIRUoTcJJkFGvNNvaeVQDj8ijCM";
+
 function extractProductTitle(pageText){
   if(!pageText) return null;
   const ogMatch = pageText.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
@@ -333,6 +338,59 @@ const RISKY_TLDS = ['tk','ml','ga','cf','gq','top','xyz','click','work','loan','
 const COMMERCE_HINTS = ['carrinho','checkout','comprar','promo','oferta','loja','shop','off'];
 const URGENCY_WORDS = ['últimas unidades','apenas hoje','oferta expira','compre agora','restam poucas','só até hoje','últimas horas'];
 
+// Plataformas populares que golpistas costumam imitar com 1-2 letras trocadas
+// (ex: vervel.app em vez de vercel.app). Comparamos por distância de edição.
+const KNOWN_PLATFORMS = ['vercel.app','netlify.app','github.io','web.app','firebaseapp.com','herokuapp.com'];
+
+function levenshtein(a, b){
+  const m = a.length, n = b.length;
+  const dp = Array.from({length:m+1}, () => new Array(n+1).fill(0));
+  for(let i=0;i<=m;i++) dp[i][0] = i;
+  for(let j=0;j<=n;j++) dp[0][j] = j;
+  for(let i=1;i<=m;i++){
+    for(let j=1;j<=n;j++){
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Retorna o nome da plataforma imitada se o domínio for "quase igual" a uma
+// plataforma conhecida (1-2 caracteres de diferença), mas não for ela de fato.
+function detectTyposquat(host){
+  for(const platform of KNOWN_PLATFORMS){
+    if(host === platform || host.endsWith('.' + platform)) return null; // é o domínio real
+    const suffixLen = platform.length;
+    const candidate = host.length >= suffixLen ? host.slice(-suffixLen) : host;
+    const dist = levenshtein(candidate, platform);
+    if(dist > 0 && dist <= 2) return platform;
+  }
+  return null;
+}
+
+// Lê a lista de sites fraudulentos cadastrada no painel admin (admin.html),
+// salva em localStorage sob a chave 'debunkly_admin_config'.
+function getAdminBlacklist(){
+  try{
+    const config = JSON.parse(localStorage.getItem('debunkly_admin_config') || '{}');
+    return Array.isArray(config.blacklist) ? config.blacklist : [];
+  }catch(e){
+    return [];
+  }
+}
+
+function checkAdminBlacklist(u){
+  const blacklist = getAdminBlacklist();
+  const host = u.hostname.toLowerCase();
+  const full = u.href.toLowerCase();
+  return blacklist.some(entry => {
+    const e = entry.toLowerCase().replace(/^https?:\/\//,'').replace(/\/$/,'');
+    return host === e || host.endsWith('.' + e) || full.includes(e);
+  });
+}
+
 // Marketplaces grandes e conhecidos: pulamos as checagens de conteúdo (urgência/contato),
 // que geram falso positivo nesses sites por causa de URLs longas e copy de marketing.
 const TRUSTED_MARKETPLACES = [
@@ -352,6 +410,42 @@ function extractUrl(raw){
   const candidate = match ? match[0] : raw.trim();
   try{ return new URL(candidate); }catch(e){
     try{ return new URL('https://' + candidate); }catch(e2){ return null; }
+  }
+}
+
+// Consulta a API do Google Safe Browsing pra ver se a URL já está numa lista
+// conhecida de malware/phishing/software indesejado. Retorna:
+//   { found: true,  types: [...] }  -> URL está na lista de perigo
+//   { found: false }                -> URL não consta na lista
+//   null                            -> sem chave configurada ou erro na consulta
+async function checkSafeBrowsing(urlHref){
+  if(!SAFE_BROWSING_API_KEY) return null;
+  try{
+    const body = {
+      client: { clientId: "debunkly-app", clientVersion: "1.0.0" },
+      threatInfo: {
+        threatTypes: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+        platformTypes: ["ANY_PLATFORM"],
+        threatEntryTypes: ["URL"],
+        threatEntries: [{ url: urlHref }]
+      }
+    };
+    const res = await fetch(
+      `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${SAFE_BROWSING_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }
+    );
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(data.matches && data.matches.length){
+      return { found: true, types: [...new Set(data.matches.map(m => m.threatType))] };
+    }
+    return { found: false };
+  }catch(e){
+    return null;
   }
 }
 
@@ -395,6 +489,14 @@ function runHeuristics(u, pageText){
     checks.push({label:'Nome de domínio com padrão incomum (hífens/números em excesso)', status:'warn'}); score += 1;
   } else {
     checks.push({label:'Estrutura do nome de domínio parece normal', status:'ok'});
+  }
+
+  // Typosquat de plataforma conhecida (ex: vervel.app imitando vercel.app)
+  const impersonated = detectTyposquat(host);
+  if(impersonated){
+    checks.push({label:`Domínio muito parecido com "${impersonated}" (possível imitação)`, status:'warn'}); score += 5;
+  } else {
+    checks.push({label:'Sem indício de imitação de plataforma conhecida', status:'ok'});
   }
 
   // Encurtador
@@ -510,7 +612,28 @@ async function scan(){
     }
   }catch(e){ pageText = null; }
 
+  const sbResult = await checkSafeBrowsing(u.href);
+
   const {checks, score} = runHeuristics(u, pageText);
+  let finalScore = score;
+
+  const onAdminBlacklist = checkAdminBlacklist(u);
+  if(onAdminBlacklist){
+    checks.push({label:'Site cadastrado manualmente como fraudulento (lista do admin)', status:'warn'});
+    finalScore += 10; // lista manual tem prioridade máxima — vai direto pra risco alto
+  } else {
+    checks.push({label:'Não consta na lista manual de sites fraudulentos', status:'ok'});
+  }
+
+  if(sbResult && sbResult.found){
+    checks.push({label:'Domínio consta na lista de sites perigosos do Google Safe Browsing', status:'warn'});
+    finalScore += 8; // isoladamente já empurra pra "alto risco"
+  } else if(sbResult && sbResult.found === false){
+    checks.push({label:'Não consta na lista de sites perigosos do Google Safe Browsing', status:'ok'});
+  } else {
+    checks.push({label:'Checagem no Google Safe Browsing não disponível', status:'na'});
+  }
+
   logEl.classList.add('show');
 
   checks.forEach((c, i) => {
@@ -523,13 +646,13 @@ async function scan(){
     logEl.appendChild(line);
   });
 
-  const v = verdictFromScore(score);
+  const v = verdictFromScore(finalScore);
   const productTitle = extractProductTitle(pageText);
   setTimeout(() => {
     verdictEl.className = 'verdict show ' + v.level;
     document.getElementById('verdictTitle').textContent = v.title;
     document.getElementById('verdictDesc').textContent = v.desc;
-    saveHistory({url:u.href, level:v.level, score});
+    saveHistory({url:u.href, level:v.level, score:finalScore});
     renderStoresPanel(v.level, productTitle);
     setupShareButton(v, u.hostname);
     btn.disabled = false;
