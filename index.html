@@ -470,6 +470,33 @@ function normalizePixEntry(s){
   return (s || '').toLowerCase().trim().replace(/[^\wà-ú@.\-]/g, '');
 }
 
+// Identifica o tipo da chave Pix pelo formato (não valida dígito verificador
+// de CPF nem confirma o número de telefone — é só reconhecimento de padrão).
+function detectPixKeyType(key){
+  const raw = (key || '').trim();
+  if(!raw) return null;
+
+  const digitsOnly = raw.replace(/\D/g, '');
+
+  if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)){
+    return 'aleatoria';
+  }
+  if(raw.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)){
+    return 'email';
+  }
+  if(digitsOnly.length === 11 && !raw.includes('@')){
+    // CPF e telefone com DDD+9dígitos têm os dois 11 dígitos — telefone
+    // normalmente vem com +55, parênteses ou traço; CPF costuma vir "puro"
+    // ou com pontos/traço no formato 000.000.000-00.
+    const looksLikePhone = /^\(?\d{2}\)?[\s-]?9?\d{4}[\s-]?\d{4}$/.test(raw) && (raw.includes('(') || raw.includes(' ') || raw.startsWith('+'));
+    return looksLikePhone ? 'telefone' : 'cpf';
+  }
+  if(digitsOnly.length >= 10 && digitsOnly.length <= 13){
+    return 'telefone';
+  }
+  return 'desconhecida';
+}
+
 function checkPixMatch(expectedName, receivedName, pixKey){
   const blacklist = getPixBlacklist();
   const receivedNorm = normalizePixEntry(receivedName);
@@ -484,7 +511,14 @@ function checkPixMatch(expectedName, receivedName, pixKey){
     normalizePixEntry(expectedName) !== receivedNorm &&
     !receivedNorm.includes(normalizePixEntry(expectedName));
 
-  return { onBlacklist, nameMismatch };
+  const keyType = detectPixKeyType(pixKey);
+
+  // Sinal clássico de golpe: pagamento pra uma "loja" caindo na chave CPF de
+  // pessoa física. O campo "nome esperado" já indica que o usuário espera
+  // estar pagando uma empresa/loja, não uma pessoa física.
+  const cpfToBusinessWarning = keyType === 'cpf' && !!(expectedName && expectedName.trim());
+
+  return { onBlacklist, nameMismatch, keyType, cpfToBusinessWarning };
 }
 
 function setupPixPanel(){
@@ -519,19 +553,31 @@ function initPixHandlers(){
         return;
       }
 
-      const { onBlacklist, nameMismatch } = checkPixMatch(expected, received, key);
+      const { onBlacklist, nameMismatch, keyType, cpfToBusinessWarning } = checkPixMatch(expected, received, key);
       resultEl.style.display = 'block';
+      resultEl.style.whiteSpace = 'pre-line';
 
+      const keyTypeLabels = { cpf:'CPF', email:'e-mail', telefone:'telefone', aleatoria:'chave aleatória', desconhecida:'formato não reconhecido' };
+      const keyTypeLine = keyType ? `Tipo de chave detectado: ${keyTypeLabels[keyType]}` : '';
+
+      let mainLine;
+      let color;
       if(onBlacklist){
-        resultEl.style.color = 'var(--danger)';
-        resultEl.textContent = '🚨 Esse nome/chave já consta na lista de fraudes conhecidas. Não prossiga com o pagamento.';
+        color = 'var(--danger)';
+        mainLine = '🚨 Esse nome/chave já consta na lista de fraudes conhecidas. Não prossiga com o pagamento.';
+      } else if(cpfToBusinessWarning){
+        color = 'var(--danger)';
+        mainLine = '🚨 A chave é um CPF de pessoa física, mas você esperava pagar uma loja/empresa. Lojas normalmente recebem por CNPJ — esse é um sinal clássico de golpe. Confirme com a loja por outro canal antes de pagar.';
       } else if(nameMismatch){
-        resultEl.style.color = 'var(--caution)';
-        resultEl.textContent = '⚠️ O nome que apareceu não bate com o esperado. Confirme com a loja por outro canal antes de pagar.';
+        color = 'var(--caution)';
+        mainLine = '⚠️ O nome que apareceu não bate com o esperado. Confirme com a loja por outro canal antes de pagar.';
       } else {
-        resultEl.style.color = 'var(--safe)';
-        resultEl.textContent = '✅ Sem sinais de alerta nesse nome/chave. Ainda assim, confira sempre antes de confirmar o Pix.';
+        color = 'var(--safe)';
+        mainLine = '✅ Sem sinais de alerta nesse nome/chave. Ainda assim, confira sempre antes de confirmar o Pix.';
       }
+
+      resultEl.style.color = color;
+      resultEl.textContent = keyTypeLine ? `${mainLine}\n\n${keyTypeLine}` : mainLine;
     });
   }
 }
