@@ -274,6 +274,7 @@
     </div>
     <textarea id="urlInput" placeholder="https://exemplo-loja.com/produto" autocomplete="off" autocapitalize="off"></textarea>
     <button class="scan-btn" id="scanBtn">Verificar link</button>
+    <p id="scanCounterLabel" style="font-size:11.5px; color:var(--text-dim); text-align:center; margin-top:8px;"></p>
   </div>
 
   <div class="log" id="log"></div>
@@ -288,6 +289,28 @@
     <p class="stores-product" id="storesProduct"></p>
     <div class="stores-list" id="storesList"></div>
     <p class="stores-note">Links de busca pelo mesmo produto — ainda não é comparação de preço confirmada.</p>
+  </div>
+
+  <div class="scan-box" id="pixPanel" style="display:none; margin-top:16px;">
+    <div class="field-row">
+      <label class="field-label">🔒 Confirmação de titular Pix · Premium</label>
+    </div>
+    <div id="pixLocked">
+      <p style="font-size:12.5px; color:var(--text-dim); line-height:1.5; margin:0 0 12px;">
+        Antes de pagar, confira se o nome que apareceu na tela do Pix bate com o esperado — e cruze com nomes/chaves já denunciados. Recurso exclusivo do plano Pro.
+      </p>
+      <button class="scan-btn" id="pixUpgradeBtn" type="button" style="background:var(--caution); color:#14171C;">Assinar Debunkly Pro</button>
+    </div>
+    <div id="pixUnlocked" style="display:none;">
+      <label class="field-label" for="pixExpected">Nome esperado (da loja)</label>
+      <textarea id="pixExpected" placeholder="Ex: Loja Exemplo LTDA" style="min-height:38px; margin-bottom:10px;"></textarea>
+      <label class="field-label" for="pixReceived">Nome que apareceu no Pix</label>
+      <textarea id="pixReceived" placeholder="Ex: João da Silva" style="min-height:38px; margin-bottom:10px;"></textarea>
+      <label class="field-label" for="pixKey">Chave Pix (opcional)</label>
+      <textarea id="pixKey" placeholder="CPF, e-mail, telefone ou chave aleatória" style="min-height:38px;"></textarea>
+      <button class="scan-btn" id="pixCheckBtn" type="button">Conferir titular do Pix</button>
+      <div id="pixResult" style="margin-top:12px; font-size:13px; display:none;"></div>
+    </div>
   </div>
 
   <div class="history">
@@ -389,6 +412,128 @@ function checkAdminBlacklist(u){
     const e = entry.toLowerCase().replace(/^https?:\/\//,'').replace(/\/$/,'');
     return host === e || host.endsWith('.' + e) || full.includes(e);
   });
+}
+
+// ---------- Confirmação de titular Pix (recurso Premium) ----------
+// TODO: quando o pagamento real (Pro) estiver integrado, trocar esta função
+// pela checagem de assinatura ativa do usuário (ex: consulta a um backend).
+// Por enquanto, é um placeholder controlável via localStorage pra testes.
+function isPremiumUser(){
+  return localStorage.getItem('debunkly_premium') === 'true';
+}
+
+// ---------- Limite de consultas gratuitas ----------
+// 2 verificações grátis por aparelho, depois exige o plano Pro (R$19,90/mês).
+const FREE_SCAN_LIMIT = 2;
+const PRO_PRICE = 'R$19,90/mês';
+
+function getScanCount(){
+  return parseInt(localStorage.getItem('debunkly_scan_count') || '0', 10);
+}
+
+function incrementScanCount(){
+  localStorage.setItem('debunkly_scan_count', String(getScanCount() + 1));
+}
+
+function remainingFreeScans(){
+  return Math.max(0, FREE_SCAN_LIMIT - getScanCount());
+}
+
+function showUpgradeAlert(){
+  // TODO: trocar por link real de checkout quando o plano Pro existir
+  alert('Debunkly Pro — ' + PRO_PRICE + '. Assinatura ainda não está disponível; em breve!');
+}
+
+function updateScanCounterLabel(){
+  const el = document.getElementById('scanCounterLabel');
+  if(!el) return;
+  if(isPremiumUser()){
+    el.textContent = '✨ Plano Pro ativo — verificações ilimitadas';
+  } else {
+    const left = remainingFreeScans();
+    el.textContent = left > 0
+      ? `${left} verificação${left === 1 ? '' : 'ões'} grátis restante${left === 1 ? '' : 's'} · depois ${PRO_PRICE}`
+      : `Limite gratuito atingido · assine o Pro por ${PRO_PRICE}`;
+  }
+}
+
+function getPixBlacklist(){
+  try{
+    const config = JSON.parse(localStorage.getItem('debunkly_admin_config') || '{}');
+    return Array.isArray(config.pixBlacklist) ? config.pixBlacklist : [];
+  }catch(e){
+    return [];
+  }
+}
+
+function normalizePixEntry(s){
+  return (s || '').toLowerCase().trim().replace(/[^\wà-ú@.\-]/g, '');
+}
+
+function checkPixMatch(expectedName, receivedName, pixKey){
+  const blacklist = getPixBlacklist();
+  const receivedNorm = normalizePixEntry(receivedName);
+  const keyNorm = normalizePixEntry(pixKey);
+
+  const onBlacklist = blacklist.some(entry => {
+    const e = normalizePixEntry(entry);
+    return e && ((receivedNorm && receivedNorm.includes(e)) || (keyNorm && keyNorm.includes(e)));
+  });
+
+  const nameMismatch = expectedName && receivedName &&
+    normalizePixEntry(expectedName) !== receivedNorm &&
+    !receivedNorm.includes(normalizePixEntry(expectedName));
+
+  return { onBlacklist, nameMismatch };
+}
+
+function setupPixPanel(){
+  const locked = document.getElementById('pixLocked');
+  const unlocked = document.getElementById('pixUnlocked');
+  if(isPremiumUser()){
+    locked.style.display = 'none';
+    unlocked.style.display = 'block';
+  } else {
+    locked.style.display = 'block';
+    unlocked.style.display = 'none';
+  }
+}
+
+function initPixHandlers(){
+  const upgradeBtn = document.getElementById('pixUpgradeBtn');
+  if(upgradeBtn){
+    upgradeBtn.addEventListener('click', showUpgradeAlert);
+  }
+  const checkBtn = document.getElementById('pixCheckBtn');
+  if(checkBtn){
+    checkBtn.addEventListener('click', () => {
+      const expected = document.getElementById('pixExpected').value;
+      const received = document.getElementById('pixReceived').value;
+      const key = document.getElementById('pixKey').value;
+      const resultEl = document.getElementById('pixResult');
+
+      if(!received.trim()){
+        resultEl.style.display = 'block';
+        resultEl.style.color = 'var(--text-dim)';
+        resultEl.textContent = 'Preencha ao menos o nome que apareceu no Pix.';
+        return;
+      }
+
+      const { onBlacklist, nameMismatch } = checkPixMatch(expected, received, key);
+      resultEl.style.display = 'block';
+
+      if(onBlacklist){
+        resultEl.style.color = 'var(--danger)';
+        resultEl.textContent = '🚨 Esse nome/chave já consta na lista de fraudes conhecidas. Não prossiga com o pagamento.';
+      } else if(nameMismatch){
+        resultEl.style.color = 'var(--caution)';
+        resultEl.textContent = '⚠️ O nome que apareceu não bate com o esperado. Confirme com a loja por outro canal antes de pagar.';
+      } else {
+        resultEl.style.color = 'var(--safe)';
+        resultEl.textContent = '✅ Sem sinais de alerta nesse nome/chave. Ainda assim, confira sempre antes de confirmar o Pix.';
+      }
+    });
+  }
 }
 
 // Marketplaces grandes e conhecidos: pulamos as checagens de conteúdo (urgência/contato),
@@ -595,6 +740,24 @@ async function scan(){
     return;
   }
 
+  if(!isPremiumUser() && remainingFreeScans() <= 0){
+    logEl.classList.add('show');
+    logEl.innerHTML = `
+      <div class="log-line" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <span style="color:var(--caution); font-weight:600;">🔒 Você já usou suas ${FREE_SCAN_LIMIT} verificações gratuitas.</span>
+        <span>Assine o Debunkly Pro por ${PRO_PRICE} para verificar sem limite.</span>
+      </div>`;
+    const upgradeBtn = document.createElement('button');
+    upgradeBtn.className = 'scan-btn';
+    upgradeBtn.style.marginTop = '10px';
+    upgradeBtn.style.background = 'var(--caution)';
+    upgradeBtn.style.color = '#14171C';
+    upgradeBtn.textContent = `Assinar Pro — ${PRO_PRICE}`;
+    upgradeBtn.onclick = showUpgradeAlert;
+    logEl.appendChild(upgradeBtn);
+    return;
+  }
+
   btn.disabled = true;
   btn.textContent = 'Analisando...';
 
@@ -655,6 +818,10 @@ async function scan(){
     saveHistory({url:u.href, level:v.level, score:finalScore});
     renderStoresPanel(v.level, productTitle);
     setupShareButton(v, u.hostname);
+    document.getElementById('pixPanel').style.display = 'block';
+    setupPixPanel();
+    if(!isPremiumUser()) incrementScanCount();
+    updateScanCounterLabel();
     btn.disabled = false;
     btn.textContent = 'Verificar link';
   }, checks.length * 90 + 200);
@@ -728,6 +895,8 @@ document.getElementById('clearHist').addEventListener('click', () => {
 })();
 
 renderHistory();
+initPixHandlers();
+updateScanCounterLabel();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
